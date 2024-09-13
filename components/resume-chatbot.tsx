@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,72 +12,56 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { UploadIcon, SendIcon } from "lucide-react";
-import * as pdfjsLib from "pdfjs-dist";
+// @ts-ignore
+import * as pdfjsLib from "pdfjs-dist/build/pdf";
+// @ts-ignore
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.entry";
 
 type Message = {
   role: "user" | "bot";
   content: string;
 };
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
 export function ResumeChatbot() {
-  const [file, setFile] = useState<File | null>(null);
   const [resumeText, setResumeText] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isUploaded, setIsUploaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-  }, []);
-
-  const extractTextFromPDF = async (file: File): Promise<string> => {
-    console.log(file);
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = "";
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(" ");
-      fullText += pageText + "\n";
-    }
-
-    return fullText;
-  };
-
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const selectedFile = event.target.files?.[0];
-    if (selectedFile && selectedFile.type === "application/pdf") {
-      setFile(selectedFile);
+    const file = event.target.files?.[0];
+    if (file && file.type === "application/pdf") {
       setIsUploaded(true);
-      setIsLoading(true);
-      try {
-        const text = await extractTextFromPDF(selectedFile);
-        setResumeText(text);
-        setMessages([
-          {
-            role: "bot",
-            content: `Great! I've processed your resume "${selectedFile.name}". What would you like to know about it?`,
-          },
-        ]);
-      } catch (error) {
-        console.error("Error extracting text from PDF:", error);
-        setMessages([
-          {
-            role: "bot",
-            content:
-              "Sorry, there was an error processing your resume. Please try again.",
-          },
-        ]);
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      alert("Please upload a PDF file.");
+      const reader = new FileReader();
+      reader.onload = async function () {
+        const typedArray = new Uint8Array(this.result as ArrayBuffer);
+        const pdf = await pdfjsLib.getDocument(typedArray).promise;
+
+        let extractedText = "";
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const textContent = await page.getTextContent();
+
+          textContent.items.forEach((item: any) => {
+            extractedText += item.str + " ";
+          });
+        }
+
+        setResumeText(extractedText);
+      };
+
+      reader.readAsArrayBuffer(file);
+      setMessages([
+        {
+          role: "bot",
+          content: `Great! I've processed your resume "${file.name}". What would you like to know about it?`,
+        },
+      ]);
     }
   };
 
